@@ -56,6 +56,15 @@ jobs:
           echo "Interpretation:"
           echo "  OLD guard = ${OLD_GUARD}  -> pre-#26276 guarded jobs ran EVEN on forks (the bug)."
           echo "  NEW guard = ${NEW_GUARD}  -> post-#26276 guarded jobs are skipped on this fork."
+          echo ""
+          echo "Caveat — repository.fork vs pull_request.head.repo.fork:"
+          echo "  github.event.repository.fork          = ${NEW_EXPR}  (is THIS repo a fork?)"
+          echo "  github.event.pull_request.head.repo.fork = ${PR_HEAD_FORK}  (did this PR come FROM a fork?)"
+          echo "  Here both are 'true' so they agree. They DIVERGE in the upstream case:"
+          echo "  a PR opened from a contributor fork against the UPSTREAM repo runs in the"
+          echo "  upstream context, so repository.fork == false (base repo is not a fork) while"
+          echo "  head.repo.fork == true. #26276's repository.fork guard does NOT cover that case;"
+          echo "  head.repo.fork does."
 
   guarded-old-expression:
     name: "Job guarded by OLD expr (pre-#26276)"
@@ -78,3 +87,19 @@ jobs:
           echo "NEW guard PASSED — this job executed."
           echo "On a fork this SHOULD be skipped; if you see this run on a fork,"
           echo "the fix would be regressing."
+
+  guarded-head-repo-fork:
+    name: "Job guarded by head.repo.fork (came-from-a-fork)"
+    needs: show-fork-context
+    runs-on: ubuntu-latest
+    # The expression that actually answers "did this PR come from a fork?".
+    # Unlike repository.fork, it inspects the PR HEAD repo, so it is true both on
+    # a downstream fork (here) AND for a contributor-fork PR against upstream —
+    # the case repository.fork misses. Skips here because head.repo.fork == true.
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    steps:
+      - run: |
+          echo "head.repo.fork guard PASSED — this job executed."
+          echo "Skipped on this fork PR (head.repo.fork == true). It would ALSO skip"
+          echo "a contributor-fork PR against upstream, where repository.fork == false"
+          echo "and the #26276 guard would incorrectly let the job run."
